@@ -1,0 +1,298 @@
+'use client'
+
+import { useState, useCallback, useRef } from 'react'
+
+interface ProcessedImage {
+  original: string
+  processed: string
+  filename: string
+}
+
+export default function Home() {
+  const [isDragging, setIsDragging] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [processedImage, setProcessedImage] = useState<ProcessedImage | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/jpg']
+
+  const validateFile = (file: File): string | null => {
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      return '请上传 JPG 或 PNG 格式的图片'
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      return '图片大小不能超过 10MB'
+    }
+    return null
+  }
+
+  const processImage = async (file: File) => {
+    const validationError = validateFile(file)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
+    setError(null)
+    setIsProcessing(true)
+
+    try {
+      const formData = new FormData()
+      formData.append('image', file)
+
+      const response = await fetch('/api/remove-bg', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '处理失败，请重试')
+      }
+
+      const blob = await response.blob()
+      const processedUrl = URL.createObjectURL(blob)
+      const originalUrl = URL.createObjectURL(file)
+
+      setProcessedImage({
+        original: originalUrl,
+        processed: processedUrl,
+        filename: file.name.replace(/\.[^/.]+$/, '') + '_nobg.png',
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '处理失败，请重试')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+
+    const files = e.dataTransfer.files
+    if (files.length > 0) {
+      processImage(files[0])
+    }
+  }, [])
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (files && files.length > 0) {
+      processImage(files[0])
+    }
+  }, [])
+
+  const handleClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  const handleDownload = useCallback(() => {
+    if (processedImage) {
+      const link = document.createElement('a')
+      link.href = processedImage.processed
+      link.download = processedImage.filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    }
+  }, [processedImage])
+
+  const handleReset = useCallback(() => {
+    if (processedImage) {
+      URL.revokeObjectURL(processedImage.original)
+      URL.revokeObjectURL(processedImage.processed)
+    }
+    setProcessedImage(null)
+    setError(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }, [processedImage])
+
+  return (
+    <main className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      <div className="container mx-auto px-4 py-8 md:py-16">
+        {/* Header */}
+        <div className="text-center mb-8 md:mb-12">
+          <h1 className="text-3xl md:text-5xl font-bold bg-gradient-to-r from-primary-600 to-primary-800 bg-clip-text text-transparent mb-4">
+            🖼️ BgRemover
+          </h1>
+          <p className="text-slate-600 text-base md:text-lg max-w-2xl mx-auto">
+            一键移除图片背景，快速、简单、免费
+          </p>
+        </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="max-w-xl mx-auto mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-center">
+            {error}
+          </div>
+        )}
+
+        {/* Upload Area */}
+        {!processedImage && (
+          <div className="max-w-2xl mx-auto">
+            <div
+              onClick={handleClick}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`
+                relative border-3 border-dashed rounded-2xl p-8 md:p-16
+                flex flex-col items-center justify-center
+                cursor-pointer transition-all duration-300
+                ${isDragging 
+                  ? 'border-primary-500 bg-primary-50 scale-[1.02]' 
+                  : 'border-slate-300 bg-white hover:border-primary-400 hover:bg-slate-50'
+                }
+              `}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/jpg"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              
+              {isProcessing ? (
+                <div className="text-center">
+                  <div className="w-16 h-16 md:w-20 md:h-20 mx-auto mb-4">
+                    <div className="w-full h-full border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin"></div>
+                  </div>
+                  <p className="text-slate-600 text-lg font-medium">正在处理中...</p>
+                  <p className="text-slate-400 text-sm mt-2">预计需要 3-5 秒</p>
+                </div>
+              ) : (
+                <>
+                  <div className="w-16 h-16 md:w-20 md:h-20 mb-4 text-primary-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-full h-full">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                    </svg>
+                  </div>
+                  <p className="text-slate-700 text-lg md:text-xl font-medium mb-2">
+                    拖拽图片到这里
+                  </p>
+                  <p className="text-slate-400 text-sm md:text-base mb-4">
+                    或点击选择文件
+                  </p>
+                  <p className="text-slate-400 text-xs md:text-sm">
+                    支持 JPG、PNG 格式，最大 10MB
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Result Preview */}
+        {processedImage && (
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-white rounded-2xl shadow-lg p-4 md:p-8">
+              <h2 className="text-xl md:text-2xl font-semibold text-slate-800 mb-6 text-center">
+                处理结果
+              </h2>
+              
+              {/* Comparison */}
+              <div className="grid md:grid-cols-2 gap-4 md:gap-8 mb-8">
+                {/* Original */}
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-slate-500 text-center">原图</p>
+                  <div className="relative aspect-square bg-slate-100 rounded-xl overflow-hidden border border-slate-200">
+                    <img
+                      src={processedImage.original}
+                      alt="原图"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                </div>
+
+                {/* Processed */}
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-slate-500 text-center">处理后</p>
+                  <div 
+                    className="relative aspect-square rounded-xl overflow-hidden border border-slate-200"
+                    style={{
+                      backgroundImage: `
+                        linear-gradient(45deg, #e5e7eb 25%, transparent 25%),
+                        linear-gradient(-45deg, #e5e7eb 25%, transparent 25%),
+                        linear-gradient(45deg, transparent 75%, #e5e7eb 75%),
+                        linear-gradient(-45deg, transparent 75%, #e5e7eb 75%)
+                      `,
+                      backgroundSize: '20px 20px',
+                      backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px'
+                    }}
+                  >
+                    <img
+                      src={processedImage.processed}
+                      alt="处理后"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <button
+                  onClick={handleDownload}
+                  className="px-8 py-3 bg-gradient-to-r from-primary-600 to-primary-700 text-white font-medium rounded-xl hover:from-primary-700 hover:to-primary-800 transition-all duration-200 shadow-lg shadow-primary-200 flex items-center justify-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                  下载透明背景 PNG
+                </button>
+                <button
+                  onClick={handleReset}
+                  className="px-8 py-3 bg-slate-100 text-slate-700 font-medium rounded-xl hover:bg-slate-200 transition-all duration-200 flex items-center justify-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  处理新图片
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Features */}
+        <div className="max-w-4xl mx-auto mt-12 md:mt-16">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+            {[
+              { icon: '⚡', title: '快速处理', desc: '5秒内完成' },
+              { icon: '🔒', title: '隐私安全', desc: '不存储图片' },
+              { icon: '🎨', title: '高清输出', desc: '透明背景 PNG' },
+              { icon: '📱', title: '全平台', desc: '支持所有设备' },
+            ].map((feature, index) => (
+              <div key={index} className="bg-white rounded-xl p-4 md:p-6 text-center shadow-sm">
+                <div className="text-2xl md:text-3xl mb-2">{feature.icon}</div>
+                <h3 className="font-semibold text-slate-800 text-sm md:text-base">{feature.title}</h3>
+                <p className="text-slate-400 text-xs md:text-sm">{feature.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <footer className="text-center mt-12 md:mt-16 text-slate-400 text-sm">
+          <p>BgRemover © 2024 - 一键移除图片背景工具</p>
+        </footer>
+      </div>
+    </main>
+  )
+}
