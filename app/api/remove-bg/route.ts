@@ -97,5 +97,5 @@ export async function POST(request: NextRequest) {
 }
 
 // 配置路由段配置
-export const runtime = 'nodejs'
+export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
