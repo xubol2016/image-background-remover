@@ -1,0 +1,11 @@
+name = "bgremover"
+compatibility_date = "2024-01-01"
+
+# 环境变量（生产环境需要在 Cloudflare Dashboard 设置）
+[env.production]
+name = "bgremover"
+
+# KV 命名空间绑定
+[[kv_namespaces]]
+binding = "BGREMOVER_KV"
+id = "your_kv_namespace_id"

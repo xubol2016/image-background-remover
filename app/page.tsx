@@ -1,6 +1,9 @@
 'use client'
 
 import { useState, useCallback, useRef } from 'react'
+import { useAuth } from './context/AuthContext'
+import GoogleLoginButton from './components/GoogleLoginButton'
+import UserAvatar from './components/UserAvatar'
 
 interface ProcessedImage {
   original: string
@@ -9,6 +12,7 @@ interface ProcessedImage {
 }
 
 export default function Home() {
+  const { user } = useAuth()
   const [isDragging, setIsDragging] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -125,14 +129,20 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="container mx-auto px-4 py-8 md:py-16">
-        {/* Header */}
-        <div className="text-center mb-8 md:mb-12">
-          <h1 className="text-3xl md:text-5xl font-bold bg-gradient-to-r from-primary-600 to-primary-800 bg-clip-text text-transparent mb-4">
-            🖼️ BgRemover
-          </h1>
-          <p className="text-slate-600 text-base md:text-lg max-w-2xl mx-auto">
-            一键移除图片背景，快速、简单、免费
-          </p>
+        {/* Header with Auth */}
+        <div className="flex justify-between items-start mb-8 md:mb-12">
+          <div className="text-center flex-1">
+            <h1 className="text-3xl md:text-5xl font-bold bg-gradient-to-r from-primary-600 to-primary-800 bg-clip-text text-transparent mb-4">
+              🖼️ BgRemover
+            </h1>
+            <p className="text-slate-600 text-base md:text-lg max-w-2xl mx-auto">
+              一键移除图片背景，快速、简单、免费
+            </p>
+          </div>
+          <div className="flex-shrink-0 ml-4">
+            <UserAvatar />
+            {!user && <GoogleLoginButton />}
+          </div>
         </div>
 
         {/* Error Message */}
