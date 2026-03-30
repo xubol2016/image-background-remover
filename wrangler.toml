@@ -5,4 +5,4 @@ compatibility_date = "2024-01-01"
 # KV 命名空间绑定
 [[kv_namespaces]]
 binding = "BGREMOVER_KV"
-id = "your_kv_namespace_id"
+id = "6e0974aa94e14dd89ab62a48cfbdb581"
