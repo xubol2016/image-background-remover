@@ -28,6 +28,7 @@ export default function Home() {
   const [processedImage, setProcessedImage] = useState<ProcessedImage | null>(null)
   const [quota, setQuota] = useState<QuotaInfo | null>(null)
   const [showQuotaAlert, setShowQuotaAlert] = useState(false)
+  const [showQuotaModal, setShowQuotaModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
@@ -47,8 +48,9 @@ export default function Home() {
         if (response.ok) {
           const data = await response.json()
           setQuota(data)
-          // 如果剩余额度少于3张，显示提示
-          if (data.remaining <= 3) {
+          if (data.remaining === 0) {
+            setShowQuotaModal(true)
+          } else if (data.remaining <= 3) {
             setShowQuotaAlert(true)
           }
         }
@@ -92,18 +94,23 @@ export default function Home() {
       if (!response.ok) {
         const errorData = await response.json()
         if (errorData.code === 'QUOTA_EXCEEDED' || errorData.code === 'GUEST_QUOTA_EXCEEDED') {
-          // 更新配额显示
           if (errorData.quota) {
             setQuota(prev => prev ? { ...prev, ...errorData.quota, remaining: 0 } : null)
           }
-          setShowQuotaAlert(true)
+          setShowQuotaModal(true)
         }
         throw new Error(errorData.error || '处理失败，请重试')
       }
 
       // 更新配额
       if (quota) {
-        setQuota({ ...quota, used: quota.used + 1, remaining: quota.remaining - 1 })
+        const newRemaining = quota.remaining - 1
+        setQuota({ ...quota, used: quota.used + 1, remaining: newRemaining })
+        if (newRemaining === 0) {
+          setShowQuotaModal(true)
+        } else if (newRemaining <= 3) {
+          setShowQuotaAlert(true)
+        }
       }
 
       const blob = await response.blob()
@@ -195,76 +202,38 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Quota Alert */}
-        {showQuotaAlert && quota && (
-          <div className={`max-w-xl mx-auto mb-6 p-4 rounded-xl ${
-            quota.remaining === 0 
-              ? 'bg-red-50 border border-red-200' 
-              : 'bg-amber-50 border border-amber-200'
-          }`}>
-            <div className="flex items-start gap-3">
-              <svg className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
-                quota.remaining === 0 ? 'text-red-500' : 'text-amber-500'
-              }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <div className="flex-1">
-                <p className={`font-medium ${
-                  quota.remaining === 0 ? 'text-red-800' : 'text-amber-800'
-                }`}>
-                  {quota.remaining === 0 
-                    ? '额度已用完' 
-                    : `仅剩 ${quota.remaining} 张额度`
-                  }
-                </p>
-                <p className={`text-sm mt-1 ${
-                  quota.remaining === 0 ? 'text-red-600' : 'text-amber-600'
-                }`}>
-                  {quota.isGuest
-                    ? '登录即送 3 张，或购买积分包/订阅'
-                    : '额度用完可购买积分包或订阅套餐'
-                  }
-                </p>
-                <Link
-                  href={quota.isGuest ? "/" : "/pricing"}
-                  className={`inline-block mt-2 text-sm font-medium ${
-                    quota.remaining === 0 
-                      ? 'text-red-700 hover:text-red-800' 
-                      : 'text-amber-700 hover:text-amber-800'
-                  }`}
-                  onClick={() => {
-                    if (quota.isGuest) {
-                      // 滚动到登录按钮
-                      document.querySelector('[data-login-area]')?.scrollIntoView({ behavior: 'smooth' })
-                    }
-                  }}
-                >
-                  {quota.isGuest ? '立即登录 →' : '查看定价方案 →'}
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Quota Badge */}
-        {quota && quota.remaining > 0 && (
+        {/* Quota Badge - 始终显示 */}
+        {quota && (
           <div className="max-w-xl mx-auto mb-6">
-            <div className="flex items-center justify-between bg-white rounded-xl p-3 border border-slate-200">
+            <div className={`flex items-center justify-between rounded-xl p-3 border ${
+              quota.remaining === 0
+                ? 'bg-red-50 border-red-200'
+                : quota.remaining <= 1
+                  ? 'bg-amber-50 border-amber-200'
+                  : 'bg-white border-slate-200'
+            }`}>
               <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={`w-4 h-4 ${
+                  quota.remaining === 0 ? 'text-red-500' : 'text-primary-500'
+                }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="text-sm text-slate-600">
-                  {quota.isGuest ? '体验额度' : '剩余额度'}
+                <span className={`text-sm ${
+                  quota.remaining === 0 ? 'text-red-600 font-medium' : 'text-slate-600'
+                }`}>
+                  {quota.remaining === 0
+                    ? '额度已用完'
+                    : quota.isGuest ? '体验额度' : '剩余额度'
+                  }
                 </span>
                 {quota.isGuest && (
                   <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                    终身
+                    游客
                   </span>
                 )}
                 {!quota.isGuest && quota.total <= 5 && (
                   <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                    赠送
+                    免费
                   </span>
                 )}
               </div>
@@ -272,17 +241,55 @@ export default function Home() {
                 <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${
-                      quota.remaining / quota.total < 0.5 ? 'bg-red-500' : 'bg-primary-500'
+                      quota.remaining === 0 ? 'bg-red-500' : quota.remaining / quota.total <= 0.5 ? 'bg-amber-500' : 'bg-primary-500'
                     }`}
-                    style={{ width: `${(quota.remaining / quota.total) * 100}%` }}
+                    style={{ width: `${Math.max(quota.remaining === 0 ? 0 : 4, (quota.remaining / quota.total) * 100)}%` }}
                   />
                 </div>
                 <span className={`text-sm font-medium ${
-                  quota.remaining / quota.total < 0.5 ? 'text-red-600' : 'text-slate-700'
+                  quota.remaining === 0 ? 'text-red-600' : quota.remaining / quota.total <= 0.5 ? 'text-amber-600' : 'text-slate-700'
                 }`}>
                   {quota.remaining}/{quota.total}
                 </span>
+                {quota.remaining === 0 && (
+                  <button
+                    onClick={() => setShowQuotaModal(true)}
+                    className="text-xs bg-primary-600 text-white px-3 py-1 rounded-full hover:bg-primary-700 transition-colors"
+                  >
+                    {quota.isGuest ? '登录获取' : '去充值'}
+                  </button>
+                )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Quota Low Warning */}
+        {showQuotaAlert && quota && quota.remaining > 0 && quota.remaining <= 3 && (
+          <div className="max-w-xl mx-auto mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200">
+            <div className="flex items-start gap-3">
+              <svg className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div className="flex-1">
+                <p className="font-medium text-amber-800">
+                  仅剩 {quota.remaining} 张额度
+                </p>
+                <p className="text-sm mt-1 text-amber-600">
+                  {quota.isGuest
+                    ? '登录即送 3 张免费额度'
+                    : '额度即将用完，建议提前充值'
+                  }
+                </p>
+              </div>
+              <button
+                onClick={() => setShowQuotaAlert(false)}
+                className="text-amber-400 hover:text-amber-600"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           </div>
         )}
@@ -474,6 +481,82 @@ export default function Home() {
           </div>
         </footer>
       </div>
+
+      {/* Quota Exhausted Modal */}
+      {showQuotaModal && quota && quota.remaining === 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowQuotaModal(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 md:p-8 animate-in fade-in zoom-in">
+            {/* Close */}
+            <button
+              onClick={() => setShowQuotaModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* Icon */}
+            <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+
+            <h3 className="text-xl font-bold text-slate-800 text-center mb-2">
+              额度已用完
+            </h3>
+            <p className="text-slate-500 text-center mb-6">
+              {quota.isGuest
+                ? `游客体验额度 ${quota.total} 张已全部使用`
+                : `免费额度 ${quota.total} 张已全部使用`
+              }
+            </p>
+
+            <div className="space-y-3">
+              {quota.isGuest && (
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                  <p className="text-sm font-medium text-blue-800 mb-1">
+                    登录即送 3 张免费额度
+                  </p>
+                  <p className="text-xs text-blue-600">使用 Google 账号一键登录</p>
+                  <div className="mt-3">
+                    <GoogleLoginButton />
+                  </div>
+                </div>
+              )}
+
+              <Link
+                href="/pricing"
+                onClick={() => setShowQuotaModal(false)}
+                className="block w-full py-3 bg-gradient-to-r from-primary-600 to-primary-700 text-white text-center font-medium rounded-xl hover:from-primary-700 hover:to-primary-800 transition-all"
+              >
+                查看定价方案
+              </Link>
+
+              <div className="flex gap-3">
+                <Link
+                  href="/pricing#credits"
+                  onClick={() => setShowQuotaModal(false)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 text-center text-sm font-medium rounded-xl hover:bg-slate-200 transition-colors"
+                >
+                  购买积分包（¥9起）
+                </Link>
+                <button
+                  onClick={() => setShowQuotaModal(false)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-500 text-center text-sm rounded-xl hover:bg-slate-200 transition-colors"
+                >
+                  稍后再说
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
