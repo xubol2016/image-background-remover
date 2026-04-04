@@ -1,14 +1,23 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAuth } from './context/AuthContext'
 import GoogleLoginButton from './components/GoogleLoginButton'
 import UserAvatar from './components/UserAvatar'
+import Link from 'next/link'
 
 interface ProcessedImage {
   original: string
   processed: string
   filename: string
+}
+
+interface QuotaInfo {
+  total: number
+  used: number
+  remaining: number
+  isGuest: boolean
+  isLifetime?: boolean
 }
 
 export default function Home() {
@@ -17,10 +26,39 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [processedImage, setProcessedImage] = useState<ProcessedImage | null>(null)
+  const [quota, setQuota] = useState<QuotaInfo | null>(null)
+  const [showQuotaAlert, setShowQuotaAlert] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
   const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/jpg']
+
+  // 获取配额信息
+  useEffect(() => {
+    const fetchQuota = async () => {
+      try {
+        const token = localStorage.getItem('auth_token')
+        const headers: HeadersInit = {}
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+        }
+        
+        const response = await fetch('/api/auth/guest', { headers })
+        if (response.ok) {
+          const data = await response.json()
+          setQuota(data)
+          // 如果剩余额度少于3张，显示提示
+          if (data.remaining <= 3) {
+            setShowQuotaAlert(true)
+          }
+        }
+      } catch (error) {
+        console.error('Fetch quota error:', error)
+      }
+    }
+    
+    fetchQuota()
+  }, [user])
 
   const validateFile = (file: File): string | null => {
     if (!ALLOWED_TYPES.includes(file.type)) {
@@ -53,7 +91,19 @@ export default function Home() {
 
       if (!response.ok) {
         const errorData = await response.json()
+        if (errorData.code === 'QUOTA_EXCEEDED' || errorData.code === 'GUEST_QUOTA_EXCEEDED') {
+          // 更新配额显示
+          if (errorData.quota) {
+            setQuota(prev => prev ? { ...prev, ...errorData.quota, remaining: 0 } : null)
+          }
+          setShowQuotaAlert(true)
+        }
         throw new Error(errorData.error || '处理失败，请重试')
+      }
+
+      // 更新配额
+      if (quota) {
+        setQuota({ ...quota, used: quota.used + 1, remaining: quota.remaining - 1 })
       }
 
       const blob = await response.blob()
@@ -144,6 +194,98 @@ export default function Home() {
             {!user && <GoogleLoginButton />}
           </div>
         </div>
+
+        {/* Quota Alert */}
+        {showQuotaAlert && quota && (
+          <div className={`max-w-xl mx-auto mb-6 p-4 rounded-xl ${
+            quota.remaining === 0 
+              ? 'bg-red-50 border border-red-200' 
+              : 'bg-amber-50 border border-amber-200'
+          }`}>
+            <div className="flex items-start gap-3">
+              <svg className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
+                quota.remaining === 0 ? 'text-red-500' : 'text-amber-500'
+              }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div className="flex-1">
+                <p className={`font-medium ${
+                  quota.remaining === 0 ? 'text-red-800' : 'text-amber-800'
+                }`}>
+                  {quota.remaining === 0 
+                    ? '额度已用完' 
+                    : `仅剩 ${quota.remaining} 张额度`
+                  }
+                </p>
+                <p className={`text-sm mt-1 ${
+                  quota.remaining === 0 ? 'text-red-600' : 'text-amber-600'
+                }`}>
+                  {quota.isGuest
+                    ? '登录即送 3 张，或购买积分包/订阅'
+                    : '额度用完可购买积分包或订阅套餐'
+                  }
+                </p>
+                <Link
+                  href={quota.isGuest ? "/" : "/pricing"}
+                  className={`inline-block mt-2 text-sm font-medium ${
+                    quota.remaining === 0 
+                      ? 'text-red-700 hover:text-red-800' 
+                      : 'text-amber-700 hover:text-amber-800'
+                  }`}
+                  onClick={() => {
+                    if (quota.isGuest) {
+                      // 滚动到登录按钮
+                      document.querySelector('[data-login-area]')?.scrollIntoView({ behavior: 'smooth' })
+                    }
+                  }}
+                >
+                  {quota.isGuest ? '立即登录 →' : '查看定价方案 →'}
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Quota Badge */}
+        {quota && quota.remaining > 0 && (
+          <div className="max-w-xl mx-auto mb-6">
+            <div className="flex items-center justify-between bg-white rounded-xl p-3 border border-slate-200">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm text-slate-600">
+                  {quota.isGuest ? '体验额度' : '剩余额度'}
+                </span>
+                {quota.isGuest && (
+                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                    终身
+                  </span>
+                )}
+                {!quota.isGuest && quota.total <= 5 && (
+                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                    赠送
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      quota.remaining / quota.total < 0.5 ? 'bg-red-500' : 'bg-primary-500'
+                    }`}
+                    style={{ width: `${(quota.remaining / quota.total) * 100}%` }}
+                  />
+                </div>
+                <span className={`text-sm font-medium ${
+                  quota.remaining / quota.total < 0.5 ? 'text-red-600' : 'text-slate-700'
+                }`}>
+                  {quota.remaining}/{quota.total}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Error Message */}
         {error && (
@@ -298,9 +440,38 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Upgrade CTA */}
+        <div className="max-w-4xl mx-auto mt-12">
+          <div className="bg-gradient-to-r from-primary-500 to-primary-600 rounded-2xl p-6 md:p-8 text-white">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="text-center md:text-left">
+                <h3 className="text-xl font-bold mb-2">需要更多额度？</h3>
+                <p className="text-primary-100">
+                  积分包永不过期 ¥9起，或订阅 Pro 版 ¥19/月
+                </p>
+              </div>
+              <Link
+                href="/pricing"
+                className="px-8 py-3 bg-white text-primary-600 rounded-xl font-medium hover:bg-primary-50 transition-colors whitespace-nowrap"
+              >
+                查看定价
+              </Link>
+            </div>
+          </div>
+        </div>
+
         {/* Footer */}
         <footer className="text-center mt-12 md:mt-16 text-slate-400 text-sm">
           <p>BgRemover © 2024 - 一键移除图片背景工具</p>
+          <div className="flex justify-center gap-4 mt-2">
+            <Link href="/pricing" className="hover:text-slate-600 transition-colors">
+              定价
+            </Link>
+            <span>·</span>
+            <Link href="/pricing#faq" className="hover:text-slate-600 transition-colors">
+              常见问题
+            </Link>
+          </div>
         </footer>
       </div>
     </main>
