@@ -86,8 +86,15 @@ export default function Home() {
       const formData = new FormData()
       formData.append('image', file)
 
+      const headers: HeadersInit = {}
+      const token = localStorage.getItem('auth_token')
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
       const response = await fetch('/api/remove-bg', {
         method: 'POST',
+        headers,
         body: formData,
       })
 
