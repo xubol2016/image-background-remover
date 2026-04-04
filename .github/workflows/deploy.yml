@@ -3,8 +3,6 @@ name: Deploy to Cloudflare Pages
 on:
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main]
 
 jobs:
   deploy:
@@ -32,8 +30,7 @@ jobs:
           REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=image-background-remover
+        run: npx wrangler pages deploy dist --project-name=image-background-remover --branch=main
+        env:
+          CLOUDFLARE_API_TOKEN: cfat_B0UoOS5Z8a0o9i36MZi0OCqUKbnLG6BHHMlxsTXOecc82620
+          CLOUDFLARE_ACCOUNT_ID: 13ee7e61b8d663d105efa3b87bf39ea3
