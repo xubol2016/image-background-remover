@@ -10,7 +10,11 @@ jobs:
     permissions:
       contents: read
       deployments: write
-    
+
+    defaults:
+      run:
+        working-directory: projects/bgremover
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,6 +24,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: projects/bgremover/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -30,7 +35,7 @@ jobs:
           REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
 
       - name: Deploy to Cloudflare Pages
-        run: npx wrangler pages deploy dist --project-name=image-background-remover --branch=main
+        run: npx wrangler pages deploy out --project-name=image-background-remover --branch=main
         env:
-          CLOUDFLARE_API_TOKEN: cfat_B0UoOS5Z8a0o9i36MZi0OCqUKbnLG6BHHMlxsTXOecc82620
-          CLOUDFLARE_ACCOUNT_ID: 13ee7e61b8d663d105efa3b87bf39ea3
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
