@@ -1,0 +1,9 @@
+name = "bgremover"
+compatibility_date = "2024-01-01"
+
+[vars]
+# 环境变量请在 Cloudflare Dashboard 或部署时设置
+# REMOVE_BG_API_KEY = ""
+
+[[env.production.vars]]
+# 生产环境变量
