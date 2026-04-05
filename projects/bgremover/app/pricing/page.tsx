@@ -1,14 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useAuth } from '../context/AuthContext'
+import { PayPalPaymentModal, type PaymentModalProps } from '../components/PayPalPaymentModal'
 
 interface PricingPlan {
   name: string
   tier: string
   monthlyPrice: number
   yearlyPrice: number
+  monthlyUSD: string
+  yearlyUSD: string
   description: string
   features: string[]
   notIncluded?: string[]
@@ -17,18 +20,19 @@ interface PricingPlan {
   buttonStyle: string
 }
 
-// 积分包配置
 interface CreditPack {
+  id: string
   name: string
   credits: number
   price: number
+  priceUSD: string
   popular?: boolean
 }
 
 const creditPacks: CreditPack[] = [
-  { name: '小额度', credits: 10, price: 9 },
-  { name: '常用包', credits: 50, price: 29, popular: true },
-  { name: '大额度', credits: 200, price: 99 },
+  { id: 'small', name: '小额度', credits: 10, price: 9, priceUSD: '1.50' },
+  { id: 'medium', name: '常用包', credits: 50, price: 29, priceUSD: '4.50', popular: true },
+  { id: 'large', name: '大额度', credits: 200, price: 99, priceUSD: '15.00' },
 ]
 
 const plans: PricingPlan[] = [
@@ -37,6 +41,8 @@ const plans: PricingPlan[] = [
     tier: 'free',
     monthlyPrice: 0,
     yearlyPrice: 0,
+    monthlyUSD: '0',
+    yearlyUSD: '0',
     description: '注册即送 3 张，用完可购买积分包',
     features: [
       '注册赠送 3 张（一次性）',
@@ -54,6 +60,8 @@ const plans: PricingPlan[] = [
     tier: 'pro',
     monthlyPrice: 19,
     yearlyPrice: 149,
+    monthlyUSD: '3.00',
+    yearlyUSD: '24.00',
     description: '按月订阅，适合定期使用的用户',
     features: [
       '每月 50 张图片处理',
@@ -72,6 +80,8 @@ const plans: PricingPlan[] = [
     tier: 'enterprise',
     monthlyPrice: 99,
     yearlyPrice: 799,
+    monthlyUSD: '15.00',
+    yearlyUSD: '120.00',
     description: '适合团队和企业用户',
     features: [
       '每月 200 张图片处理',
@@ -105,11 +115,11 @@ const faqs = [
   },
   {
     question: '年付和月付有什么区别？',
-    answer: '年付享受大幅优惠：Pro 版年付 ¥149（相当于 ¥12.4/月，节省 35%），企业版年付 ¥799（相当于 ¥66.6/月，节省 33%）。',
+    answer: '年付享受大幅优惠：Pro 版年付 $24（相当于 $2/月，节省 33%），企业版年付 $120（相当于 $10/月，节省 33%）。',
   },
   {
     question: '支持哪些支付方式？',
-    answer: '目前支持支付宝、微信支付。PayPal 和国际信用卡支付即将上线。企业版还支持对公转账，可开具增值税专用发票。',
+    answer: '目前支持 PayPal 支付（包括 PayPal 余额、绑定的银行卡和信用卡）。后续将支持更多支付方式。',
   },
   {
     question: '处理后的图片会保存多久？',
@@ -125,80 +135,54 @@ export default function PricingPage() {
   const { user } = useAuth()
   const [isYearly, setIsYearly] = useState(false)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
-  const [isLoading, setIsLoading] = useState<string | null>(null)
+  const [paymentModal, setPaymentModal] = useState<PaymentModalProps | null>(null)
+  const [modalKey, setModalKey] = useState(0)
 
-  // 购买积分包
-  const handleBuyCredits = async (packType: string) => {
+  const handleBuyCredits = (pack: CreditPack) => {
     if (!user) {
       alert('请先登录')
       return
     }
 
-    setIsLoading(packType)
-    try {
-      const token = localStorage.getItem('auth_token')
-      const response = await fetch('/api/credits/packs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ packType }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '购买失败')
-      }
-
-      const data = await response.json()
-      // 跳转到 Stripe Checkout
-      window.location.href = data.url
-    } catch (error) {
-      alert(error instanceof Error ? error.message : '购买失败，请重试')
-    } finally {
-      setIsLoading(null)
-    }
+    setModalKey((k) => k + 1)
+    setPaymentModal({
+      type: 'credit',
+      packType: pack.id,
+      packName: pack.name,
+      credits: pack.credits,
+      priceUSD: pack.priceUSD,
+      onClose: () => setPaymentModal(null),
+      onSuccess: () => {
+        setPaymentModal(null)
+        window.location.href = '/profile?payment=success'
+      },
+    })
   }
 
-  // 订阅套餐
-  const handleSubscribe = async (plan: string) => {
+  const handleSubscribe = (plan: PricingPlan) => {
     if (!user) {
       alert('请先登录')
       return
     }
 
-    if (plan === 'free') {
-      return
-    }
+    if (plan.tier === 'free') return
 
-    setIsLoading(plan)
-    try {
-      const token = localStorage.getItem('auth_token')
-      const response = await fetch('/api/payment/create-checkout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          plan,
-          billing: isYearly ? 'yearly' : 'monthly',
-        }),
-      })
+    const billing = isYearly ? 'yearly' : 'monthly'
+    const priceUSD = isYearly ? plan.yearlyUSD : plan.monthlyUSD
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '订阅失败')
-      }
-
-      const data = await response.json()
-      window.location.href = data.url
-    } catch (error) {
-      alert(error instanceof Error ? error.message : '订阅失败，请重试')
-    } finally {
-      setIsLoading(null)
-    }
+    setModalKey((k) => k + 1)
+    setPaymentModal({
+      type: 'subscription',
+      plan: plan.tier as 'pro' | 'enterprise',
+      billing,
+      planName: `${plan.name} (${billing === 'monthly' ? '月付' : '年付'})`,
+      priceUSD,
+      onClose: () => setPaymentModal(null),
+      onSuccess: () => {
+        setPaymentModal(null)
+        window.location.href = '/profile?payment=success'
+      },
+    })
   }
 
   return (
@@ -246,7 +230,7 @@ export default function PricingPage() {
             >
               年付
               <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                省 43%
+                省 33%
               </span>
             </button>
           </div>
@@ -268,28 +252,29 @@ export default function PricingPage() {
                   最受欢迎
                 </div>
               )}
-              
+
               <h3 className="text-xl font-bold text-slate-800 mb-2">{plan.name}</h3>
               <p className="text-slate-500 text-sm mb-4">{plan.description}</p>
-              
+
               <div className="mb-6">
                 <span className="text-4xl font-bold text-slate-800">
-                  ¥{isYearly ? Math.round(plan.yearlyPrice / 12) : plan.monthlyPrice}
+                  ${isYearly
+                    ? (parseFloat(plan.yearlyUSD) / 12).toFixed(0)
+                    : parseFloat(plan.monthlyUSD).toFixed(0)}
                 </span>
                 <span className="text-slate-500">/月</span>
-                {isYearly && plan.yearlyPrice > 0 && (
+                {isYearly && parseFloat(plan.yearlyUSD) > 0 && (
                   <p className="text-sm text-slate-400 mt-1">
-                    年付 ¥{plan.yearlyPrice}
+                    年付 ${plan.yearlyUSD}
                   </p>
                 )}
               </div>
 
               <button
-                onClick={() => handleSubscribe(plan.tier)}
-                disabled={isLoading === plan.tier}
-                className={`w-full py-3 rounded-xl font-medium transition-all mb-6 ${plan.buttonStyle} disabled:opacity-50 disabled:cursor-not-allowed`}
+                onClick={() => handleSubscribe(plan)}
+                className={`w-full py-3 rounded-xl font-medium transition-all mb-6 ${plan.buttonStyle}`}
               >
-                {isLoading === plan.tier ? '处理中...' : plan.buttonText}
+                {plan.buttonText}
               </button>
 
               <div className="space-y-3">
@@ -324,7 +309,7 @@ export default function PricingPage() {
           <div className="grid md:grid-cols-3 gap-6">
             {creditPacks.map((pack) => (
               <div
-                key={pack.name}
+                key={pack.id}
                 className={`bg-white rounded-2xl p-6 border-2 transition-all ${
                   pack.popular
                     ? 'border-primary-500 shadow-lg shadow-primary-100'
@@ -337,29 +322,28 @@ export default function PricingPage() {
                   </div>
                 )}
                 <h3 className="text-lg font-bold text-slate-800 mb-1">{pack.name}</h3>
-                <p className="text-3xl font-bold text-slate-800 mb-4">
-                  ¥{pack.price}
+                <p className="text-3xl font-bold text-slate-800 mb-1">
+                  ${pack.priceUSD}
                   <span className="text-lg text-slate-400 font-normal"> / {pack.credits}张</span>
                 </p>
                 <p className="text-sm text-slate-500 mb-4">
-                  约 ¥{(pack.price / pack.credits).toFixed(2)}/张
+                  约 ${(parseFloat(pack.priceUSD) / pack.credits).toFixed(2)}/张
                 </p>
                 <button
-                  onClick={() => handleBuyCredits(pack.name === '小额度' ? 'small' : pack.name === '常用包' ? 'medium' : 'large')}
-                  disabled={isLoading === (pack.name === '小额度' ? 'small' : pack.name === '常用包' ? 'medium' : 'large')}
-                  className={`w-full py-3 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                  onClick={() => handleBuyCredits(pack)}
+                  className={`w-full py-3 rounded-xl font-medium transition-all ${
                     pack.popular
                       ? 'bg-primary-600 text-white hover:bg-primary-700'
                       : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
                 >
-                  {isLoading === (pack.name === '小额度' ? 'small' : pack.name === '常用包' ? 'medium' : 'large') ? '处理中...' : '购买'}
+                  购买
                 </button>
               </div>
             ))}
           </div>
           <p className="text-center text-sm text-slate-500 mt-4">
-            积分包永不过期，可随时使用 · 后续将支持 PayPal 支付
+            积分包永不过期，可随时使用 · 通过 PayPal 安全支付
           </p>
         </div>
 
@@ -382,11 +366,11 @@ export default function PricingPage() {
                 {[
                   { feature: '处理额度', free: '注册送3张', pro: '50张/月', enterprise: '200张/月' },
                   { feature: '额度重置', free: '一次性', pro: '每月重置', enterprise: '每月重置' },
-                  { feature: '积分包', free: '✓ 可购买', pro: '✓ 可购买', enterprise: '✓ 可购买' },
+                  { feature: '积分包', free: '可购买', pro: '可购买', enterprise: '可购买' },
                   { feature: '输出质量', free: '标准', pro: '高清', enterprise: '超高清' },
                   { feature: '水印', free: '有', pro: '无', enterprise: '无' },
-                  { feature: '批量处理', free: '—', pro: '—', enterprise: '✓' },
-                  { feature: 'API 接入', free: '—', pro: '—', enterprise: '✓' },
+                  { feature: '批量处理', free: '-', pro: '-', enterprise: '支持' },
+                  { feature: 'API 接入', free: '-', pro: '-', enterprise: '支持' },
                   { feature: '处理优先级', free: '标准', pro: '优先', enterprise: '最高' },
                   { feature: '历史记录保存', free: '7天', pro: '30天', enterprise: '永久' },
                 ].map((row, idx) => (
@@ -458,9 +442,12 @@ export default function PricingPage() {
 
         {/* Footer */}
         <footer className="text-center mt-12 text-slate-400 text-sm">
-          <p>BgRemover © 2024 - 一键移除图片背景工具</p>
+          <p>BgRemover &copy; 2024 - 一键移除图片背景工具</p>
         </footer>
       </div>
+
+      {/* PayPal Payment Modal */}
+      {paymentModal && <PayPalPaymentModal key={modalKey} {...paymentModal} />}
     </div>
   )
 }
